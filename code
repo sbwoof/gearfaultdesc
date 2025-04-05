@@ -1,0 +1,160 @@
+#did this on jupyter notebook
+
+import pandas as pd
+import numpy as np
+import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+import matplotlib.pyplot as plt
+from scipy.stats import zscore
+from sklearn.model_selection import learning_curve
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
+
+df = pd.read_csv("ds proj/preprocessed_dsproject.csv") 
+
+z_scores = (df[['sensor1', 'sensor2', 'time_x']] - df[['sensor1', 'sensor2', 'time_x']].mean()) / df[['sensor1', 'sensor2', 'time_x']].std()
+
+#correlation matrix
+plt.figure(figsize=(10, 6))
+sns.heatmap(z_scores.corr(), annot=True, cmap='coolwarm', fmt='.2f')
+plt.title('Correlation Heatmap of Z-Scores (All Variables)')
+plt.show()
+
+threshold = 3
+
+
+mask = (z_scores.abs() > threshold).any(axis=1)
+
+#Removing outliers
+cleaned_df = df[~mask]
+
+print(f"Before removal: {df.shape}")
+print(f"After removal: {cleaned_df.shape}")
+print(f"Total outliers removed: {mask.sum()}")
+
+X = df[['sensor1', 'sensor2', 'time_x','speedSet', 'load_value']]
+y = df['gear_fault_desc']
+
+
+#sensor1 vs sensor2 scatterplot
+plt.figure(figsize=(8, 6))
+sns.scatterplot(data=df, x='sensor1', y='sensor2', hue='gear_fault_desc', palette = 'coolwarm')
+plt.title('Sensor1 vs Sensor2 with Gear Fault Description')
+plt.xlabel('Sensor1')
+plt.ylabel('Sensor2')
+plt.legend(title='Gear Fault Description')
+plt.show()
+
+#sensor1 distribution boxplot
+plt.figure(figsize=(8, 6))
+sns.boxplot(data=df, x='gear_fault_desc', y='sensor1')
+plt.title('Sensor1 Distribution by Gear Fault Description')
+plt.xlabel('Gear Fault Description')
+plt.ylabel('Sensor1')
+plt.show()
+
+#sensor2 distribution boxplot
+plt.figure(figsize=(8, 6))
+sns.boxplot(data=df, x='gear_fault_desc', y='sensor2')
+plt.title('Sensor2 Distribution by Gear Fault Description')
+plt.xlabel('Gear Fault Description')
+plt.ylabel('Sensor2')
+plt.show()
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+#random forest
+model = RandomForestClassifier(n_estimators=100, random_state=42)
+model.fit(X_train_scaled, y_train)
+
+y_pred = model.predict(X_test_scaled)
+
+mae = mean_absolute_error(y_test, y_pred)
+mse = mean_squared_error(y_test, y_pred)
+r2 = r2_score(y_test, y_pred)
+
+
+print(f"Mean Absolute Error: {mae}")
+print(f"Mean Squared Error: {mse}")
+print(f"R² Score: {r2}")
+
+accuracy = accuracy_score(y_test, y_pred)*100
+confusion = confusion_matrix(y_test, y_pred)
+class_report = classification_report(y_test, y_pred)
+
+
+print(f"Accuracy: {accuracy:.2f}%")
+print("\nConfusion Matrix:\n", confusion)
+print("\nClassification Report:\n", class_report)
+
+
+def gear_fault_prediction():
+
+    s1 = float(input("Enter Sensor 1 value: "))
+    s2 = float(input("Enter Sensor 2 value: "))
+    t = float(input("Enter Time in Seconds: "))
+    speed = float(input("Enter Speed Set value: "))
+    load = float(input("Enter Load Value: "))
+
+
+    input_data = pd.DataFrame([[s1, s2, t, speed, load]], 
+                              columns=['sensor1', 'sensor2', 'time_x', 'speedSet', 'load_value'])
+    input_data_scaled = scaler.transform(input_data)
+    prediction = model.predict(input_data_scaled)
+
+    return int(prediction[0])
+
+result = gear_fault_prediction()
+
+print(f"Predicted Gear Fault Description: {result}")
+
+if result == 1:
+    print("Gear fault could be eccentricity")
+elif result==2:
+    print("Gear fault could be missing tooth")
+elif result==3:
+    print("Gear fault could be root crack")
+elif result==4:
+    print("Gear fault could be surface faults")
+elif result==5:
+    print("Gear fault could be chipped tooth")
+else:
+    print("No Gear Fault Detected.")
+
+train_sizes, train_scores, test_scores = learning_curve(
+    model, X_train_scaled, y_train,cv = 4, scoring='accuracy',
+    train_sizes=np.linspace(0.1, 1, 15), n_jobs=-1
+)
+
+train_mean = np.mean(train_scores, axis=1)
+test_mean = np.mean(test_scores, axis=1)
+
+# Plot
+plt.figure(figsize=(7,3))
+plt.plot(train_sizes, train_mean, label="Training Score", color="red")
+plt.plot(train_sizes, test_mean, label="Cross-Validation Score", color="blue")
+plt.title("Learning Curve")
+plt.xlabel("Training Set Size")
+plt.ylabel("Accuracy")
+plt.legend()
+plt.show()
+
+
+result = pd.DataFrame({'Actual': y_test.values, 'Predicted': y_pred})
+
+# Plot
+plt.figure(figsize=(8, 5))
+plt.scatter(range(len(y_test)), result['Actual'], color='blue', label='Actual')
+plt.scatter(range(len(y_test)), result['Predicted'], color='red', alpha=0.5, label='Predicted')
+plt.title("Actual vs Predicted Gear Faults")
+plt.xlabel("Sample Index")
+plt.ylabel("Gear Fault Description")
+plt.legend()
+plt.show()
